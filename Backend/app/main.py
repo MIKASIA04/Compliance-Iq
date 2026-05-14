@@ -474,17 +474,10 @@ def check_transaction(
     db.refresh(tx)
 
     # ── PIPELINE INTEGRATION ──────────────────────────────────────────────
-    # Once Person 2 gives you pipeline.py, replace everything below
-    # (the "Basic rule check" section) with these 2 lines:
-    #
-    #   from ml.pipeline import process_transaction
-    #   result = process_transaction(request.dict())
-    #
-    # Then use result["flagged"], result["risk_level"], result["ai_alert"],
-    # result["shap_explanation"], result["regulation_cited"] below.
-    # ─────────────────────────────────────────────────────────────────────
+   
+   
 
-    # ── BASIC RULE CHECK (runs until Person 2's pipeline is ready) ─────────
+    # ── BASIC RULE CHECK  ─────────
     flags = []
 
     # Rule 1: Large transfer to unverified account (KYC violation)
@@ -532,6 +525,9 @@ def check_transaction(
             "section": "PMLA 2002 — Section 3 + FATF Recommendation 16",
         })
 
+    from ml.pipeline import analyze_transaction
+    result = analyze_transaction(request.dict())
+
     # Determine risk level from flags
     is_flagged = len(flags) > 0
     high_flags = [f for f in flags if f["severity"] == "high"]
@@ -578,6 +574,9 @@ def check_transaction(
         "risk_score": round(risk_score, 3),
         "violations_found": len(flags),
         "flags": flags,
+        "ml_probability": result["ml_probability"],
+        "shap_explanation": result["shap_explanation"],
+        "ai_alert": result["summary"],
         "alert_id": alert.id if alert else None,
         "message": (
             f"FLAGGED — {len(flags)} violation(s). Alert created."
