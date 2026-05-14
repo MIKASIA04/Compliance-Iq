@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Compilance QI Dashhboard</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      background: #0b1120;
+      color: white;
+      font-family: Arial, sans-serif;
+    }
+
+    .glass {
+      background: rgba(255,255,255,0.05);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .glow {
+      box-shadow: 0 0 20px rgba(0,255,255,0.15);
+    }
+
+    .pulse {
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.03); }
+      100% { transform: scale(1); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="flex min-h-screen">
+
+    <!-- SIDEBAR -->
+    <aside class="w-72 glass p-6 border-r border-gray-800">
+      <h1 class="text-3xl font-bold text-cyan-400 mb-10">
+        Compilance IQ
+      </h1>
+
+      <nav class="space-y-5 text-lg">
+        <div class="bg-cyan-500/20 p-3 rounded-xl">📊 Dashboard</div>
+        <div class="hover:bg-white/10 p-3 rounded-xl cursor-pointer">🚨 Alerts</div>
+        <div class="hover:bg-white/10 p-3 rounded-xl cursor-pointer">👤 Users</div>
+        <div class="hover:bg-white/10 p-3 rounded-xl cursor-pointer">🕸 Fraud Network</div>
+        <div class="hover:bg-white/10 p-3 rounded-xl cursor-pointer">📁 Cases</div>
+        <div class="hover:bg-white/10 p-3 rounded-xl cursor-pointer">⚙ Settings</div>
+      </nav>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="flex-1 p-8 overflow-y-auto">
+
+      <!-- TOP BAR -->
+      <div class="flex justify-between items-center mb-8">
+        <div>
+          <h2 class="text-4xl font-bold">Compilance IQ Intelligence</h2>
+          <p class="text-gray-400 mt-2">Real-Time Risk Monitoring System</p>
+        </div>
+
+        <div class="glass px-5 py-3 rounded-2xl glow">
+          🔴 LIVE MONITORING ACTIVE
+        </div>
+      </div>
+
+      <!-- STATS -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+
+        <div class="glass p-6 rounded-3xl glow pulse">
+          <p class="text-gray-400">Total Transactions</p>
+          <h3 class="text-4xl font-bold mt-3">14,532</h3>
+        </div>
+
+        <div class="glass p-6 rounded-3xl glow">
+          <p class="text-gray-400">Fraud Alerts</p>
+          <h3 class="text-4xl font-bold text-red-400 mt-3">126</h3>
+        </div>
+
+        <div class="glass p-6 rounded-3xl glow">
+          <p class="text-gray-400">High Risk Users</p>
+          <h3 class="text-4xl font-bold text-yellow-400 mt-3">39</h3>
+        </div>
+
+        <div class="glass p-6 rounded-3xl glow">
+          <p class="text-gray-400">System Accuracy</p>
+          <h3 class="text-4xl font-bold text-green-400 mt-3">98%</h3>
+        </div>
+
+      </div>
+
+      <!-- CHARTS -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+
+        <div class="glass p-6 rounded-3xl">
+          <h3 class="text-2xl font-bold mb-5">Fraud Activity Trend</h3>
+          <canvas id="fraudChart"></canvas>
+        </div>
+
+        <div class="glass p-6 rounded-3xl">
+          <h3 class="text-2xl font-bold mb-5">Risk Distribution</h3>
+          <canvas id="riskChart"></canvas>
+        </div>
+
+      </div>
+
+      <!-- ALERTS TABLE -->
+      <div class="glass p-6 rounded-3xl mb-8">
+        <div class="flex justify-between items-center mb-6">
+          <h3 class="text-2xl font-bold">🚨 Suspicious Transactions</h3>
+          <button class="bg-cyan-500 hover:bg-cyan-400 px-5 py-2 rounded-xl font-bold">
+            Generate Report
+          </button>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left">
+            <thead>
+              <tr class="border-b border-gray-700 text-gray-400">
+                <th class="p-4">Transaction ID</th>
+                <th class="p-4">User</th>
+                <th class="p-4">Amount</th>
+                <th class="p-4">Risk Score</th>
+                <th class="p-4">Status</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr class="border-b border-gray-800 hover:bg-white/5">
+                <td class="p-4">TXN-99231</td>
+                <td class="p-4">Rahul Sharma</td>
+                <td class="p-4">₹95,000</td>
+                <td class="p-4 text-red-400 font-bold">92</td>
+                <td class="p-4">
+                  <span class="bg-red-500/20 text-red-300 px-3 py-1 rounded-full">
+                    Critical
+                  </span>
+                </td>
+              </tr>
+
+              <tr class="border-b border-gray-800 hover:bg-white/5">
+                <td class="p-4">TXN-99232</td>
+                <td class="p-4">Aman Verma</td>
+                <td class="p-4">₹48,000</td>
+                <td class="p-4 text-yellow-400 font-bold">70</td>
+                <td class="p-4">
+                  <span class="bg-yellow-500/20 text-yellow-300 px-3 py-1 rounded-full">
+                    Medium
+                  </span>
+                </td>
+              </tr>
+
+              <tr class="hover:bg-white/5">
+                <td class="p-4">TXN-99233</td>
+                <td class="p-4">Priya Patel</td>
+                <td class="p-4">₹1,20,000</td>
+                <td class="p-4 text-red-400 font-bold">96</td>
+                <td class="p-4">
+                  <span class="bg-red-500/20 text-red-300 px-3 py-1 rounded-full">
+                    Critical
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- FRAUD NETWORK -->
+      <div class="glass p-6 rounded-3xl">
+        <h3 class="text-2xl font-bold mb-6">🕸 Fraud Network Visualization</h3>
+
+        <div class="relative h-96 flex items-center justify-center">
+
+          <div class="absolute top-10 left-20 bg-red-500 px-4 py-2 rounded-full">
+            Rahul
+          </div>
+
+          <div class="absolute top-40 left-80 bg-yellow-500 px-4 py-2 rounded-full">
+            Unknown A/C
+          </div>
+
+          <div class="absolute bottom-10 left-40 bg-cyan-500 px-4 py-2 rounded-full">
+            Priya
+          </div>
+
+          <div class="absolute top-20 right-32 bg-red-500 px-4 py-2 rounded-full">
+            Suspicious Wallet
+          </div>
+
+          <svg class="absolute inset-0 w-full h-full">
+            <line x1="170" y1="70" x2="430" y2="180" stroke="cyan" stroke-width="3" />
+            <line x1="430" y1="180" x2="700" y2="100" stroke="red" stroke-width="3" />
+            <line x1="430" y1="180" x2="240" y2="300" stroke="yellow" stroke-width="3" />
+          </svg>
+
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    const fraudCtx = document.getElementById('fraudChart');
+
+    new Chart(fraudCtx, {
+      type: 'line',
+      data: {
+        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+        datasets: [{
+          label: 'Fraud Cases',
+          data: [12, 19, 8, 25, 18, 30],
+          borderColor: '#06b6d4',
+          backgroundColor: 'rgba(6,182,212,0.2)',
+          tension: 0.4,
+          fill: true
+        }]
+      }
+    });
+
+    const riskCtx = document.getElementById('riskChart');
+
+    new Chart(riskCtx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Low', 'Medium', 'High'],
+        datasets: [{
+          data: [55, 25, 20],
+          backgroundColor: ['#22c55e', '#eab308', '#ef4444']
+        }]
+      }
+    });
+  </script>
+
+</body>
+</html>
