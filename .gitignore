@@ -8,3 +8,5 @@ shap_explainer.pkl
 chroma_db/
 venv/
 .vscode/
+node_modules
+dist
