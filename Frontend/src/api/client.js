@@ -1,17 +1,60 @@
 import axios from "axios";
 
-const client = axios.create({
-  baseURL: "http://localhost:8000",
+const API = axios.create({
+
+  baseURL: "http://localhost:5000",
+
 });
 
-client.interceptors.request.use((config) => {
-  const token = sessionStorage.getItem("token");
+export async function getAlerts() {
 
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
+  const response =
+    await API.get("/alerts");
 
-  return config;
-});
+  return response.data;
 
-export default client;
+}
+
+export async function loginUser(data) {
+
+  const response =
+    await API.post(
+      "/login",
+      data
+    );
+
+  return response.data;
+
+}
+export async function getDashboardStats() {
+
+  const response =
+    await API.get(
+      "/dashboard-stats"
+    );
+
+  return response.data;
+
+}
+
+export async function resolveAlert(id) {
+
+  const response =
+    await API.patch(
+      `/alerts/${id}/resolve`
+    );
+
+  return response.data;
+
+}
+
+export async function escalateAlert(id) {
+
+  const response =
+    await API.patch(
+      `/alerts/${id}/escalate`
+    );
+
+  return response.data;
+
+}

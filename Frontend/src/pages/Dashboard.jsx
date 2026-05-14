@@ -9,15 +9,24 @@ import StatCard from "../components/StatCard";
 import AlertRow from "../components/AlertRow";
 import ShapChart from "../components/ShapChart";
 
+
 import {
-  dashboardStats,
-  mockAlerts,
-} from "../api/mockData";
+  getDashboardStats,
+  getAlerts,
+}
+from "../api/client";
+
+
 
 export default function Dashboard() {
 
   const [loading, setLoading] =
     useState(true);
+    const [dashboardStats, setDashboardStats] =
+  useState(null);
+
+const [alerts, setAlerts] =
+  useState([]);
 
   useEffect(() => {
 
@@ -30,6 +39,33 @@ export default function Dashboard() {
     return () => clearTimeout(timer);
 
   }, []);
+  useEffect(() => {
+
+  async function fetchData() {
+
+    try {
+
+      const stats =
+        await getDashboardStats();
+
+      const alertsData =
+        await getAlerts();
+
+      setDashboardStats(stats);
+
+      setAlerts(alertsData);
+
+    } catch (error) {
+
+      console.error(error);
+
+    }
+
+  }
+
+  fetchData();
+
+}, []);
 
   if (loading) {
 
@@ -327,7 +363,7 @@ export default function Dashboard() {
 
               <tbody>
 
-                {mockAlerts.map((alert) => (
+                {alerts.map((alert) => (
 
                   <AlertRow
                     key={alert.id}
@@ -349,7 +385,7 @@ export default function Dashboard() {
         <div className="mt-12">
 
           <ShapChart
-            data={mockAlerts[0].shap_explanation}
+            data={alerts[0]?.shap_explanation || []}
           />
 
         </div>
