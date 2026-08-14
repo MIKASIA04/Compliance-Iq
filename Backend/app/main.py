@@ -39,7 +39,6 @@
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,11 +47,18 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from fastapi.security import HTTPBearer
-
+import logging
+from app.ml_client import call_ml_pipeline
 from app.database import (
     Alert, AuditLog, Base, Transaction, User, engine, get_db
 )
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+)
+
+logger = logging.getLogger(__name__)
+
 
 load_dotenv()
 
@@ -243,12 +249,12 @@ class ChatbotRequest(BaseModel):
 # Use it for one-time setup: creating tables, creating the default admin.
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("ComplianceIQ starting up...")
+    logger.info("ComplianceIQ starting up...")
 
     # Create all database tables if they don't exist yet.
     # This is safe to run every time — if tables exist, it does nothing.
     Base.metadata.create_all(bind=engine)
-    print("  Database tables ready.")
+    logger.info("  Database tables ready.")
 
     # Create default users if none exist yet.
     # This means on your very first run, you can immediately log in
@@ -272,18 +278,18 @@ async def lifespan(app: FastAPI):
                 role="analyst",
             ))
             db.commit()
-            print("  Default users created:")
-            print("    admin@complianceiq.com   / Admin@1234")
-            print("    officer@complianceiq.com / Officer@1234")
-            print("    analyst@complianceiq.com / Analyst@1234")
+            logger.info("  Default users created:")
+            logger.info("    admin@complianceiq.com   / Admin@1234")
+            logger.info("    officer@complianceiq.com / Officer@1234")
+            logger.info("    analyst@complianceiq.com / Analyst@1234")
         else:
-            print("  Users already exist — skipping.")
+            logger.info("  Users already exist — skipping.")
     finally:
         db.close()
 
-    print("  Ready. Visit: http://localhost:8000/docs")
+    logger.info("  Ready. Visit: http://localhost:8000/docs")
     yield  # Server runs here. Everything above = startup. Below = shutdown.
-    print("ComplianceIQ shutting down.")
+    logger.info("ComplianceIQ shutting down.")
 
 
 # ── CREATE THE APP ────────────────────────────────────────────────────────────
@@ -335,6 +341,35 @@ def root():
         "version": "1.0.0",
         "docs": "/docs",
     }
+
+@app.get("/ml/health", tags=["health"])
+def ml_health():
+    """
+    Checks whether the ML pipeline is available and the model can be loaded.
+    """
+    try:
+        sample_transaction = {
+            "sender_account": "TEST001",
+            "receiver_account": "TEST002",
+            "amount": 1000,
+            "hour_of_day": 12,
+            "tx_count_7d": 1,
+            "kyc_verified": True,
+        }
+
+        return {
+        "status": "healthy",
+        "pipeline": "ML Service Connected"
+    }
+
+        
+
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "pipeline": "failed",
+            "error": str(e),
+        }
 
 
 # ── LOGIN ─────────────────────────────────────────────────────────────────────
@@ -436,7 +471,7 @@ def get_my_profile(current_user: User = Depends(get_current_user)):
 
 # ── CHECK A TRANSACTION ───────────────────────────────────────────────────────
 @app.post("/transactions/check", tags=["transactions"])
-def check_transaction(
+async def check_transaction(
     request: TransactionCheckRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -458,6 +493,12 @@ def check_transaction(
     NOTE: The 'process_transaction' import is commented out until
     Person 2 finishes pipeline.py. The basic rule check below runs in the meantime.
     """
+    logger.info(
+      "Transaction check started | Sender=%s | Receiver=%s | Amount=₹%.2f",
+      request.sender_account,
+      request.receiver_account,
+      request.amount,
+    )
     # Save transaction to database first
     tx = Transaction(
         sender_account=request.sender_account,
@@ -525,8 +566,28 @@ def check_transaction(
             "section": "PMLA 2002 — Section 3 + FATF Recommendation 16",
         })
 
-    from ml.pipeline import analyze_transaction
-    result = analyze_transaction(request.dict())
+    logger.info("Running ML pipeline")
+
+    try:
+        result = await call_ml_pipeline(request.dict())
+
+        logger.info(
+            "ML prediction completed | Risk=%s | Probability=%.4f",
+            result["risk_level"],
+            result["ml_probability"],
+        )
+
+    except Exception as e:
+        logger.exception("ML pipeline execution failed")
+
+        result = {
+            "risk_level": "UNKNOWN",
+            "ml_probability": 0.0,
+            "rule_violations": [],
+            "shap_explanation": [],
+            "summary": f"ML pipeline unavailable: {str(e)}",
+            "flagged": False,
+        }
 
     # Determine risk level from flags
     is_flagged = len(flags) > 0
@@ -566,6 +627,12 @@ def check_transaction(
     db.commit()
     if alert:
         db.refresh(alert)
+    logger.info(
+    "Transaction %s completed | Flagged=%s",
+    tx.id,
+    is_flagged,
+    )
+
 
     return {
         "transaction_id": tx.id,
@@ -919,6 +986,6 @@ def chatbot_ask(
 # ── START THE SERVER (when running this file directly) ─────────────────────
 if __name__ == "__main__":
     import uvicorn
-    print("Starting ComplianceIQ server...")
-    print("API docs: http://localhost:8000/docs")
+    logger.info("Starting ComplianceIQ server...")
+    logger.info("API docs: http://localhost:8000/docs")
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
