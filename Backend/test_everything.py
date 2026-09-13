@@ -67,7 +67,7 @@ def test(name, condition, error_msg=""):
 
 def get_token(email, password):
     """Log in and return the access token."""
-    r = requests.post(f"{BASE}/auth/login", json={"email": email, "password": password})
+    r = requests.post(f"{BASE}/auth/login", data={"username": email, "password": password})
     if r.status_code == 200:
         return r.json()["access_token"]
     return None
@@ -130,7 +130,7 @@ r = requests.post(f"{BASE}/transactions/check",
 )
 tx_data = r.json()
 test("Submit flagged transaction",
-     r.status_code == 200 and tx_data.get("flagged") == True and tx_data.get("risk_level") == "high",
+     r.status_code == 200 and tx_data.get("flagged") == True and tx_data.get("risk_level") == "HIGH",
      f"Got {r.status_code}: {r.text[:200]}")
 
 flagged_alert_id = tx_data.get("alert_id")

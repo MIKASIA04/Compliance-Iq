@@ -37,6 +37,7 @@
 # ============================================================
 
 import os
+import json
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 
@@ -49,11 +50,19 @@ from passlib.context import CryptContext
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from fastapi.security import HTTPBearer
+from ml.pipeline import analyze_transaction
 
 from app.database import (
     Alert, AuditLog, Base, Transaction, User, engine, get_db
 )
 
+def safe_json(obj):
+    import numpy as np
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (np.integer, np.floating)):
+        return obj.item()
+    return obj
 load_dotenv()
 
 # ── SECURITY SETUP ──────────────────────────────────────────────────────────
@@ -442,23 +451,13 @@ def check_transaction(
     db: Session = Depends(get_db),
 ):
     """
-    Submit a transaction for compliance checking.
-    This is the HEART of the system.
-
-    What happens:
-    1. Save the transaction to the database
-    2. Run it through the compliance pipeline (Person 2's code)
-    3. If flagged: create an Alert record
-    4. Return the result
-
-    Try it in /docs with:
-        amount: 980000, kyc_verified: false, hour_of_day: 2, tx_count_7d: 4
-    You should get back a HIGH risk alert about structuring.
-
-    NOTE: The 'process_transaction' import is commented out until
-    Person 2 finishes pipeline.py. The basic rule check below runs in the meantime.
+    Submit a transaction for compliance checking using:
+    - RBI/PMLA rule engine
+    - XGBoost fraud detection
+    - SHAP explainability
     """
-    # Save transaction to database first
+
+    # ── SAVE TRANSACTION TO DATABASE ─────────────────────────────
     tx = Transaction(
         sender_account=request.sender_account,
         receiver_account=request.receiver_account,
@@ -469,123 +468,85 @@ def check_transaction(
         kyc_verified=request.kyc_verified,
         status="pending",
     )
+
     db.add(tx)
     db.commit()
     db.refresh(tx)
 
-    # ── PIPELINE INTEGRATION ──────────────────────────────────────────────
-    # Once Person 2 gives you pipeline.py, replace everything below
-    # (the "Basic rule check" section) with these 2 lines:
-    #
-    #   from ml.pipeline import process_transaction
-    #   result = process_transaction(request.dict())
-    #
-    # Then use result["flagged"], result["risk_level"], result["ai_alert"],
-    # result["shap_explanation"], result["regulation_cited"] below.
-    # ─────────────────────────────────────────────────────────────────────
+    # ── PREPARE DATA FOR ML PIPELINE ─────────────────────────────
+    tx_data = {
+        "amount": request.amount,
+        "hour_of_day": request.hour_of_day,
+        "tx_count_7d": request.tx_count_7d,
+        "kyc_verified": request.kyc_verified,
+    }
 
-    # ── BASIC RULE CHECK (runs until Person 2's pipeline is ready) ─────────
-    flags = []
+    # ── RUN ML + RULE ENGINE PIPELINE ────────────────────────────
+    result = analyze_transaction(tx_data)
 
-    # Rule 1: Large transfer to unverified account (KYC violation)
-    if request.amount > 500000 and not request.kyc_verified:
-        flags.append({
-            "rule": "KYC Enhanced Due Diligence Required",
-            "reason": f"Transfer of ₹{request.amount:,.0f} to unverified account.",
-            "severity": "high",
-            "section": "RBI KYC Master Direction 2023 — Section 16(3)",
-        })
+        # ── EXTRACT RESULTS ──────────────────────────────────────────
+    is_flagged = result.get("flagged", False)
+    risk_level = result.get("risk_level", "low")
+    risk_score = result.get("ml_probability", 0.0)
 
-    # Rule 2: Amount suspiciously close to ₹10L reporting threshold (structuring)
-    if 900000 <= request.amount < 1000000:
-        flags.append({
-            "rule": "Possible Structuring",
-            "reason": f"₹{request.amount:,.0f} is {round(request.amount/1000000*100,1)}% of ₹10L threshold.",
-            "severity": "high",
-            "section": "PMLA 2002 — Section 3",
-        })
-
-    # Rule 3: Above ₹10L mandatory reporting threshold
-    if request.amount >= 1000000:
-        flags.append({
-            "rule": "PMLA Mandatory Reporting",
-            "reason": f"₹{request.amount:,.0f} exceeds ₹10L reporting threshold.",
-            "severity": "medium",
-            "section": "PMLA 2002 — Rule 7",
-        })
-
-    # Rule 4: Overnight large transfer (suspicious timing)
-    if request.hour_of_day in [0,1,2,3,4] and request.amount > 500000:
-        flags.append({
-            "rule": "Suspicious Overnight Transfer",
-            "reason": f"₹{request.amount:,.0f} transferred at {request.hour_of_day:02d}:00 hrs.",
-            "severity": "medium",
-            "section": "PMLA 2002 — Rule 7",
-        })
-
-    # Rule 5: Pattern structuring (many large transactions this week)
-    if request.tx_count_7d >= 3 and request.amount >= 500000:
-        flags.append({
-            "rule": "Structuring Pattern Detected",
-            "reason": f"Sender made {request.tx_count_7d} large transfers this week.",
-            "severity": "high",
-            "section": "PMLA 2002 — Section 3 + FATF Recommendation 16",
-        })
-
-    # Determine risk level from flags
-    is_flagged = len(flags) > 0
-    high_flags = [f for f in flags if f["severity"] == "high"]
-    risk_level = "high" if high_flags else ("medium" if flags else "low")
-    risk_score = min(0.95, 0.3 + len(flags) * 0.2) if is_flagged else 0.05
-
-    # Build alert text
-    alert_text = None
-    if is_flagged:
-        reasons = "\n".join([f"- {f['rule']}: {f['reason']}" for f in flags])
-        alert_text = (
-            f"COMPLIANCE ALERT — {risk_level.upper()} RISK\n\n"
-            f"Violations detected:\n{reasons}\n\n"
-            f"Required action: Review immediately. If confirmed, file an STR "
-            f"with FIU-IND within 7 working days."
-        )
-
-    # Update transaction status
+    violations = result.get("rule_violations", [])
+    shap_explanation = result.get("shap_explanation", {})
+    ai_alert = result.get("summary", "No alert generated.")
+    # ── UPDATE TRANSACTION ───────────────────────────────────────
     tx.status = "flagged" if is_flagged else "clean"
     tx.risk_score = risk_score
     tx.checked_at = datetime.utcnow()
 
-    # Create Alert record if flagged
+    # ── CREATE ALERT IF FLAGGED ──────────────────────────────────
     alert = None
+
     if is_flagged:
+
+        violation_type = (
+            violations[0]["rule_name"]
+            if violations else
+            "ML Fraud Detection"
+        )
+
+        regulation_cited = (
+            violations[0].get("regulation_source")
+            if violations else
+            "AI Risk Engine"
+        )
+
         alert = Alert(
             transaction_id=tx.id,
-            risk_level=risk_level,
-            violation_type=flags[0]["rule"] if flags else "unknown",
-            regulation_cited=flags[0]["section"] if flags else None,
-            ai_explanation=alert_text,
+            risk_level=result["risk_level"].lower(),
+            violation_type=violation_type,
+            regulation_cited=regulation_cited,
+            ai_explanation=ai_alert,
+            shap_features_json=json.dumps(safe_json(shap_explanation)),
             status="open",
         )
+
         db.add(alert)
 
+    # ── SAVE CHANGES ─────────────────────────────────────────────
     db.commit()
+
     if alert:
         db.refresh(alert)
 
+    # ── RETURN RESPONSE ──────────────────────────────────────────
     return {
         "transaction_id": tx.id,
         "flagged": is_flagged,
         "risk_level": risk_level,
-        "risk_score": round(risk_score, 3),
-        "violations_found": len(flags),
-        "flags": flags,
+        "risk_score": risk_score,
+        "violations": violations,
+        "shap_explanation": shap_explanation,
         "alert_id": alert.id if alert else None,
         "message": (
-            f"FLAGGED — {len(flags)} violation(s). Alert created."
+            "Transaction flagged and alert created."
             if is_flagged else
-            "Transaction is clean. No violations detected."
+            "Transaction appears clean."
         ),
     }
-
 
 # ── GET ALL ALERTS ─────────────────────────────────────────────────────────
 @app.get("/alerts", tags=["alerts"])
