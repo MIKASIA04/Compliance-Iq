@@ -159,7 +159,10 @@ if __name__ == "__main__":
     violation_count = df["label"].sum()
     print(f"  ✓ Generated {len(df):,} transactions ({violation_count} violations, "
           f"{len(df)-violation_count} normal)\n")
-
+    import os
+    os.makedirs("dataset", exist_ok=True)
+    df.to_csv("dataset/transactions.csv", index=False)
+    print("  ✓ Saved to: dataset/transactions.csv\n")
     print("Step 2/4 — Training XGBoost model...")
     model, X_test = train_and_evaluate(df)
 
