@@ -42,8 +42,15 @@ class FraudDetectionModel:
     it returns real predictions instead of fake placeholder ones.
     """
 
-    def predict(self, transaction: dict) -> dict:
+    def predict(self, transaction) -> dict:
         from ml.pipeline import analyze_transaction
+
+        # transaction may be a dict OR a Pydantic model (PredictionRequest) —
+        # normalize to a plain dict either way
+        if hasattr(transaction, "model_dump"):
+            transaction = transaction.model_dump()
+        elif hasattr(transaction, "dict"):
+            transaction = transaction.dict()
 
         tx_data = {
             "amount": transaction.get("amount", 0),
@@ -53,3 +60,7 @@ class FraudDetectionModel:
         }
         result = analyze_transaction(tx_data)
         return result
+
+
+# predict.py imports this exact name — an instance ready to call .predict() on
+model = FraudDetectionModel()
