@@ -900,23 +900,9 @@ def chatbot_ask(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Compliance chatbot endpoint.
-    Currently returns a placeholder. Person 2 will add real RAG logic here.
-
-    When Person 2 gives you chatbot.py, replace the return statement with:
-        from rag.chatbot import answer_question
-        result = answer_question(body.question)
-        return result
-    """
-    return {
-        "question": body.question,
-        "answer": (
-            "Chatbot will be active after the RAG pipeline is integrated. "
-            "It will answer questions about RBI, SEBI, and PMLA regulations."
-        ),
-        "sources": [],
-    }
+    from ml.chatbot import answer_question
+    result = answer_question(body.question)
+    return result
 
 
 # ── START THE SERVER (when running this file directly) ─────────────────────
