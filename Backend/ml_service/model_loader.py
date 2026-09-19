@@ -1,84 +1,55 @@
-"""
-Temporary model loader.
+# ============================================================
+# FILE: ml_service/model_loader.py
+# ============================================================
+# Loads the REAL trained model + SHAP explainer and wraps them
+# so the ml_service microservice returns real predictions
+# instead of placeholder fake numbers.
+# ============================================================
 
-This is a placeholder ML model.
+import os
+import pickle
 
-It returns responses in the same format expected by
-the ComplianceIQ backend. Later this can be replaced
-with a real trained model loaded via joblib/pickle.
-"""
+
+def load_model():
+    path = "ml/model.pkl"
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Model not found at {path}")
+    with open(path, "rb") as f:
+        return pickle.load(f)
+
+
+def load_explainer():
+    path = "ml/shap_explainer.pkl"
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Explainer not found at {path}")
+    with open(path, "rb") as f:
+        return pickle.load(f)
+
+
+try:
+    _model = load_model()
+    _explainer = load_explainer()
+    print("  Real ML model and SHAP explainer loaded.")
+except FileNotFoundError as e:
+    print(f"  WARNING: {e}")
+    _model = _explainer = None
 
 
 class FraudDetectionModel:
+    """
+    Wraps the real trained pipeline (rule engine + XGBoost + SHAP)
+    so ml_service/main.py can call it exactly as before, but now
+    it returns real predictions instead of fake placeholder ones.
+    """
 
-    def predict(self, transaction):
-        """
-        Simulate ML prediction.
+    def predict(self, transaction: dict) -> dict:
+        from ml.pipeline import analyze_transaction
 
-        Returns:
-            risk_level
-            ml_probability
-            rule_violations
-            shap_explanation
-            summary
-            flagged
-        """
-
-        # Use the same field your backend sends
-        kyc_verified = getattr(transaction, "kyc_verified", True)
-
-        if transaction.amount > 500000 and not kyc_verified:
-            return {
-                "risk_level": "HIGH",
-                "ml_probability": 0.92,
-                "rule_violations": [
-                    {
-                        "rule_id": "ML001",
-                        "rule_name": "High Value Unverified Transaction",
-                        "regulation_source": "RBI KYC Master Direction",
-                        "description": "High-value transfer involving an unverified account.",
-                        "severity": "HIGH",
-                    }
-                ],
-                "shap_explanation": [
-                    {
-                        "feature_name": "amount",
-                        "display_name": "Transaction Amount",
-                        "value": transaction.amount,
-                        "contribution": 0.82,
-                        "direction": "increases_risk",
-                    },
-                    {
-                        "feature_name": "kyc_verified",
-                        "display_name": "KYC Status",
-                        "value": int(kyc_verified),
-                        "contribution": 0.64,
-                        "direction": "increases_risk",
-                    },
-                ],
-                "summary": (
-                    "High-value transaction involving an "
-                    "unverified account. Manual review recommended."
-                ),
-                "flagged": True,
-            }
-
-        return {
-            "risk_level": "LOW",
-            "ml_probability": 0.15,
-            "rule_violations": [],
-            "shap_explanation": [
-                {
-                    "feature_name": "amount",
-                    "display_name": "Transaction Amount",
-                    "value": transaction.amount,
-                    "contribution": 0.12,
-                    "direction": "decreases_risk",
-                }
-            ],
-            "summary": "No significant fraud indicators detected.",
-            "flagged": False,
+        tx_data = {
+            "amount": transaction.get("amount", 0),
+            "hour_of_day": transaction.get("hour_of_day", 12),
+            "tx_count_7d": transaction.get("tx_count_7d", 1),
+            "kyc_verified": transaction.get("kyc_verified", True),
         }
-
-
-model = FraudDetectionModel()
+        result = analyze_transaction(tx_data)
+        return result
