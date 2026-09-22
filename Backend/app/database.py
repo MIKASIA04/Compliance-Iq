@@ -53,11 +53,13 @@ load_dotenv()
 # No installation needed. Perfect for development.
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./complianceiq.db")
 
+# SQLite needs this special arg; PostgreSQL (and other real databases) don't.
+# This makes the same code work for local dev (SQLite) and production (Postgres).
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    # ^ This line is required for SQLite only. Remove it if you switch
-    #   to PostgreSQL later.
+    connect_args=connect_args,
 )
 
 # SessionLocal is what you use to read/write the database.
