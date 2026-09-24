@@ -1,7 +1,17 @@
 """
 rule_engine.py — Person 2's File 1
-Hard-coded legal rule checker for Indian fintech compliance.
-Each rule maps directly to an RBI/PMLA regulation.
+
+Rule-based compliance and risk checks for Indian fintech transactions.
+
+Important:
+These checks distinguish between:
+1. Compliance-related conditions that may require review, and
+2. Risk indicators that do NOT by themselves prove a legal violation.
+
+The transaction dataset is synthetic and contains only:
+amount, hour_of_day, tx_count_7d, kyc_verified.
+Therefore, the rules do not claim facts that cannot be established
+from these fields.
 """
 
 from dataclasses import dataclass
@@ -19,127 +29,267 @@ class RuleViolation:
 
 def check_rules(transaction: dict) -> List[RuleViolation]:
     """
-    Takes a transaction dictionary and returns a list of rule violations.
+    Takes a transaction dictionary and returns compliance/risk findings.
 
     Transaction dict keys:
-        amount          — transaction amount in INR (e.g. 980000)
-        hour_of_day     — hour transaction happened (0–23)
-        tx_count_7d     — how many transactions this account made in last 7 days
-        kyc_verified    — True/False, is the sender KYC verified?
-        sender_account  — account ID string
-        receiver_account— account ID string
+        amount           — transaction amount in INR
+        hour_of_day      — hour transaction happened (0–23)
+        tx_count_7d      — transactions from the account in last 7 days
+        kyc_verified     — True/False, KYC status of the sender
+        sender_account   — account ID string
+        receiver_account — account ID string
+
+    Important:
+        A finding returned here does not automatically establish that
+        a transaction is legally prohibited or that money laundering
+        has occurred.
     """
-    violations = []
+
+    findings = []
+
     amount = transaction.get("amount", 0)
     hour = transaction.get("hour_of_day", 12)
     tx_count = transaction.get("tx_count_7d", 0)
     kyc_verified = transaction.get("kyc_verified", True)
 
-    # ── Rule 1: Large Cash Transaction ──────────────────────────────────────
-    # PMLA 2002 / RBI Master Direction: transactions ≥ ₹10 lakh must be
-    # reported to the Financial Intelligence Unit (FIU-IND).
+    # ── Rule 1: Large Transaction Risk ──────────────────────────────────────
+    #
+    # The dataset does not tell us whether a transaction is cash,
+    # whether it belongs to a reportable category, or whether the
+    # relevant aggregation/reporting conditions are satisfied.
+    #
+    # Therefore, ₹10 lakh is treated as a risk/review threshold,
+    # NOT as an automatic FIU-IND reporting violation.
+
     if amount >= 1_000_000:
-        violations.append(RuleViolation(
+        findings.append(RuleViolation(
             rule_id="R001",
-            rule_name="Large Cash Transaction Threshold",
-            regulation_source="PMLA 2002 — Section 12, FIU-IND Reporting",
-            description=f"Transaction amount ₹{amount:,.0f} meets or exceeds the ₹10 lakh "
-                        "mandatory reporting threshold. Must be reported to FIU-IND within 7 days.",
+            rule_name="Large Transaction — Enhanced Review",
+            regulation_source=(
+                "PMLA 2002 and applicable AML reporting requirements"
+            ),
+            description=(
+                f"Transaction amount ₹{amount:,.0f} is a high-value transaction "
+                "and should be reviewed against the applicable AML reporting "
+                "and record-keeping requirements. The available transaction "
+                "data does not establish that an FIU-IND report is automatically "
+                "required."
+            ),
             severity="HIGH"
         ))
 
-    # ── Rule 2: Structuring (Smurfing) ───────────────────────────────────────
-    # Breaking large transactions into smaller ones just below ₹10 lakh to
-    # avoid reporting — this is illegal under PMLA 2002 Section 3.
+    # ── Rule 2: Possible Structuring Risk ───────────────────────────────────
+    #
+    # A single transaction between ₹8 lakh and ₹10 lakh cannot establish
+    # structuring. Structuring requires evidence of a pattern or intent.
+    #
+    # We therefore flag the amount as a review indicator only.
+
     if 800_000 <= amount < 1_000_000:
-        violations.append(RuleViolation(
+        findings.append(RuleViolation(
             rule_id="R002",
-            rule_name="Possible Structuring / Smurfing",
-            regulation_source="PMLA 2002 — Section 3 (Money Laundering Offence)",
-            description=f"Transaction of ₹{amount:,.0f} is suspiciously close to but below the "
-                        "₹10 lakh reporting threshold. Pattern suggests deliberate structuring to "
-                        "avoid AML reporting obligations.",
+            rule_name="Near-Threshold Transaction Risk",
+            regulation_source=(
+                "PMLA 2002 — AML/CFT monitoring and suspicious transaction "
+                "assessment"
+            ),
+            description=(
+                f"Transaction of ₹{amount:,.0f} falls within a high-value "
+                "near-threshold range. This may warrant review for possible "
+                "structuring when considered together with transaction history "
+                "and other customer activity. This transaction alone does not "
+                "prove structuring."
+            ),
             severity="HIGH"
         ))
 
-    # ── Rule 3: Off-hours High-Value Transaction ─────────────────────────────
-    # RBI guidelines flag high-value transactions during unusual hours
-    # (midnight to 5am) as elevated risk.
+    # ── Rule 3: Unusual-Time High-Value Transaction ──────────────────────────
+    #
+    # The dataset shows that overnight transactions are strongly associated
+    # with the synthetic suspicious class. However, unusual transaction time
+    # is a risk indicator, not by itself a regulatory violation.
+
     if amount > 500_000 and (hour < 5 or hour >= 23):
-        violations.append(RuleViolation(
+        findings.append(RuleViolation(
             rule_id="R003",
-            rule_name="Off-Hours High-Value Transaction",
-            regulation_source="RBI Digital Payments Security Controls — Annex 3",
-            description=f"₹{amount:,.0f} transacted at {hour:02d}:00 hours. High-value transactions "
-                        "between 11pm–5am require enhanced monitoring under RBI fraud prevention norms.",
+            rule_name="Unusual-Time High-Value Transaction",
+            regulation_source=(
+                "RBI KYC/AML and fraud-risk monitoring framework"
+            ),
+            description=(
+                f"High-value transaction of ₹{amount:,.0f} occurred at "
+                f"{hour:02d}:00. An unusual transaction time can be used as "
+                "a monitoring signal and should be assessed together with "
+                "customer history and other risk indicators."
+            ),
             severity="MEDIUM"
         ))
 
-    # ── Rule 4: KYC Non-Compliance ───────────────────────────────────────────
-    # RBI Master Direction on KYC 2016 (updated 2023): no transactions above
-    # ₹50,000 for accounts that have not completed full KYC.
-    if not kyc_verified and amount > 50_000:
-        violations.append(RuleViolation(
+    # ── Rule 4: KYC Compliance Risk ─────────────────────────────────────────
+    #
+    # RBI's KYC Master Direction contains requirements concerning KYC,
+    # customer due diligence and restrictions/monitoring in cases of
+    # non-compliance.
+    #
+    # Our dataset only tells us whether KYC is marked verified.
+    # It does NOT contain enough information to establish the exact
+    # circumstances of a legally restricted account.
+
+    if not kyc_verified:
+        findings.append(RuleViolation(
             rule_id="R004",
-            rule_name="KYC Non-Compliant Transaction",
-            regulation_source="RBI Master Direction on KYC — 2016 (amended 2023), Section 16",
-            description=f"Account is not KYC-verified but attempted a ₹{amount:,.0f} transaction. "
-                        "Transactions above ₹50,000 are prohibited for non-KYC accounts.",
+            rule_name="KYC Compliance Risk",
+            regulation_source=(
+                "RBI Master Direction – Know Your Customer (KYC)"
+            ),
+            description=(
+                "The account is marked as not KYC-verified. The transaction "
+                "should be reviewed against the applicable Customer Due "
+                "Diligence and account-operation requirements. The available "
+                "data does not establish a specific transaction-value "
+                "prohibition."
+            ),
             severity="HIGH"
         ))
 
-    # ── Rule 5: Velocity / Rapid Fire Transactions ───────────────────────────
-    # More than 20 transactions in 7 days from the same account is flagged
-    # as unusual velocity — possible account takeover or layering.
+    # ── Rule 5: Unusual Transaction Velocity ────────────────────────────────
+    #
+    # The dataset uses tx_count_7d as a behavioural feature.
+    # More than 20 transactions is a project-defined anomaly threshold,
+    # NOT a universal RBI legal threshold.
+
     if tx_count > 20:
-        violations.append(RuleViolation(
+        findings.append(RuleViolation(
             rule_id="R005",
             rule_name="Unusual Transaction Velocity",
-            regulation_source="RBI Fraud Risk Management Guidelines 2023 — Section 4.2",
-            description=f"Account made {tx_count} transactions in the last 7 days, exceeding the "
-                        "20-transaction velocity threshold. Possible layering or account compromise.",
+            regulation_source=(
+                "RBI fraud-risk monitoring principles"
+            ),
+            description=(
+                f"Account recorded {tx_count} transactions in the last "
+                "7 days. This exceeds the project's behavioural monitoring "
+                "threshold and may indicate unusual activity requiring review. "
+                "It is not, by itself, evidence of layering, fraud, or a "
+                "regulatory violation."
+            ),
             severity="MEDIUM"
         ))
 
-    # ── Rule 6: Round-Number Suspicion ───────────────────────────────────────
-    # Exact round numbers (e.g. ₹500,000.00) are a common AML red flag —
-    # real transactions rarely end in exactly 0,000.
+    # ── Rule 6: Round-Number Risk Indicator ─────────────────────────────────
+    #
+    # Round transaction amounts can be useful as an AML/fraud risk signal,
+    # but the amount alone does not establish suspicious activity.
+
     if amount >= 100_000 and amount % 100_000 == 0:
-        violations.append(RuleViolation(
+        findings.append(RuleViolation(
             rule_id="R006",
-            rule_name="Suspicious Round-Number Amount",
-            regulation_source="FATF Recommendation 20 — Suspicious Transaction Reporting",
-            description=f"₹{amount:,.0f} is a suspiciously round number. Round-value transactions "
-                        "are a recognised red flag under FATF guidance and RBI AML norms.",
+            rule_name="Round-Number Transaction Risk",
+            regulation_source=(
+                "AML/CFT transaction-monitoring risk indicators"
+            ),
+            description=(
+                f"Transaction amount ₹{amount:,.0f} is an exact round-number "
+                "amount. This can be used as a behavioural risk indicator "
+                "when combined with other transaction characteristics, but "
+                "does not by itself establish suspicious activity."
+            ),
             severity="LOW"
         ))
 
-    return violations
+    return findings
 
 
-# ── Self-test: run this file directly to verify all 6 rules work ─────────────
+# ── Self-test ────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
+
     test_cases = [
-        # (description, transaction, should_trigger_rule_ids)
-        ("Large cash (₹12L)", {"amount": 1_200_000, "hour_of_day": 10, "tx_count_7d": 2, "kyc_verified": True}, ["R001"]),
-        ("Structuring (₹9.5L)", {"amount": 950_000, "hour_of_day": 14, "tx_count_7d": 3, "kyc_verified": True}, ["R002"]),
-        ("Off-hours (₹6L at 2am)", {"amount": 600_000, "hour_of_day": 2, "tx_count_7d": 1, "kyc_verified": True}, ["R003"]),
-        ("KYC fail (₹1L no KYC)", {"amount": 100_000, "hour_of_day": 11, "tx_count_7d": 2, "kyc_verified": False}, ["R004"]),
-        ("High velocity (25 tx)", {"amount": 5_000, "hour_of_day": 9, "tx_count_7d": 25, "kyc_verified": True}, ["R005"]),
-        ("Round number (₹5L)", {"amount": 500_000, "hour_of_day": 15, "tx_count_7d": 1, "kyc_verified": True}, ["R006"]),
+        (
+            "Large transaction (₹12L)",
+            {
+                "amount": 1_200_000,
+                "hour_of_day": 10,
+                "tx_count_7d": 2,
+                "kyc_verified": True
+            },
+            ["R001"]
+        ),
+        (
+            "Near-threshold transaction (₹9.5L)",
+            {
+                "amount": 950_000,
+                "hour_of_day": 14,
+                "tx_count_7d": 3,
+                "kyc_verified": True
+            },
+            ["R002"]
+        ),
+        (
+            "High-value transaction at unusual time (₹6L at 2am)",
+            {
+                "amount": 600_000,
+                "hour_of_day": 2,
+                "tx_count_7d": 1,
+                "kyc_verified": True
+            },
+            ["R003"]
+        ),
+        (
+            "KYC compliance risk",
+            {
+                "amount": 100_000,
+                "hour_of_day": 11,
+                "tx_count_7d": 2,
+                "kyc_verified": False
+            },
+            ["R004"]
+        ),
+        (
+            "High transaction velocity",
+            {
+                "amount": 5_000,
+                "hour_of_day": 9,
+                "tx_count_7d": 25,
+                "kyc_verified": True
+            },
+            ["R005"]
+        ),
+        (
+            "Round-number transaction",
+            {
+                "amount": 500_000,
+                "hour_of_day": 15,
+                "tx_count_7d": 1,
+                "kyc_verified": True
+            },
+            ["R006"]
+        ),
     ]
 
     all_passed = True
+
     for desc, tx, expected_ids in test_cases:
-        violations = check_rules(tx)
-        found_ids = [v.rule_id for v in violations]
-        passed = all(rid in found_ids for rid in expected_ids)
+        findings = check_rules(tx)
+        found_ids = [finding.rule_id for finding in findings]
+
+        passed = all(rule_id in found_ids for rule_id in expected_ids)
+
         status = "[PASS]" if passed else "[FAIL]"
+
         if not passed:
             all_passed = False
+
         print(f"{status} {desc}")
-        for v in violations:
-            print(f"       → {v.rule_id}: {v.rule_name} ({v.severity})")
+
+        for finding in findings:
+            print(
+                f"       → {finding.rule_id}: "
+                f"{finding.rule_name} ({finding.severity})"
+            )
 
     print()
-    print("All tests passed ✓" if all_passed else "Some tests FAILED — check above")
+
+    if all_passed:
+        print("All tests passed ✓")
+    else:
+        print("Some tests FAILED — check above")

@@ -1,5 +1,5 @@
-"""
-pipeline.py — Person 2's File 3 (THE MOST IMPORTANT FILE)
+﻿"""
+pipeline.py â€” Person 2's File 3 (THE MOST IMPORTANT FILE)
 This is the brain of the entire system.
 
 It takes one transaction dictionary and returns a complete analysis:
@@ -22,7 +22,7 @@ from typing import Optional
 from ml.rule_engine import check_rules, RuleViolation
 
 
-# ── Load models once at startup (not on every request) ───────────────────────
+# â”€â”€ Load models once at startup (not on every request) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 _model = None
 _explainer = None
@@ -47,7 +47,7 @@ def _load_models():
         _explainer = pickle.load(f)
 
 
-# ── SHAP explanation helper ───────────────────────────────────────────────────
+# â”€â”€ SHAP explanation helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 FEATURE_LABELS = {
     "amount":       "Transaction Amount",
@@ -63,7 +63,7 @@ def _get_shap_explanation(transaction_df: pd.DataFrame) -> list[dict]:
     """
     shap_values = _explainer.shap_values(transaction_df)
 
-    # shap_values shape: (1, 4) — one row, four features
+    # shap_values shape: (1, 4) â€” one row, four features
     row_shap = shap_values[0] if len(shap_values.shape) > 1 else shap_values
 
     features = transaction_df.columns.tolist()
@@ -84,7 +84,7 @@ def _get_shap_explanation(transaction_df: pd.DataFrame) -> list[dict]:
     return explanations[:3]  # Return top 3 only
 
 
-# ── Risk level helper ─────────────────────────────────────────────────────────
+# â”€â”€ Risk level helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _risk_level(probability: float, rule_violations: list) -> str:
     high_severity_rules = [v for v in rule_violations if v.severity == "HIGH"]
@@ -96,7 +96,7 @@ def _risk_level(probability: float, rule_violations: list) -> str:
         return "LOW"
 
 
-# ── Plain-English alert summary ───────────────────────────────────────────────
+# â”€â”€ Plain-English alert summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _build_summary(transaction: dict, risk_level: str,
                    rule_violations: list, shap_top3: list) -> str:
@@ -106,26 +106,26 @@ def _build_summary(transaction: dict, risk_level: str,
     hour = transaction.get("hour_of_day", 12)
 
     if not rule_violations and risk_level == "LOW":
-        return (f"Transaction of ₹{amount:,.0f} processed normally. "
+        return (f"Transaction of â‚¹{amount:,.0f} processed normally. "
                 "No regulatory flags or anomalies detected.")
 
-    lines = [f"⚠ {risk_level} RISK ALERT — Transaction of ₹{amount:,.0f}\n"]
+    lines = [f"âš  {risk_level} RISK ALERT â€” Transaction of â‚¹{amount:,.0f}\n"]
 
     if rule_violations:
-        lines.append("Regulatory violations detected:")
+        lines.append("Compliance/risk findings detected:")
         for v in rule_violations:
-            lines.append(f"  • [{v.rule_id}] {v.rule_name}")
+            lines.append(f"  â€¢ [{v.rule_id}] {v.rule_name}")
             lines.append(f"    Source: {v.regulation_source}")
             lines.append(f"    Detail: {v.description}")
 
     if shap_top3:
         lines.append("\nML model flagged this transaction because:")
         for item in shap_top3:
-            direction_text = "↑ raises risk" if item["direction"] == "increases_risk" else "↓ lowers risk"
-            lines.append(f"  • {item['display_name']} = {item['value']} ({direction_text})")
+            direction_text = "â†‘ raises risk" if item["direction"] == "increases_risk" else "â†“ lowers risk"
+            lines.append(f"  â€¢ {item['display_name']} = {item['value']} ({direction_text})")
 
     lines.append("\nRecommended action: " + (
-        "Escalate to Compliance Officer immediately and file STR with FIU-IND within 24 hours."
+       "Escalate to the Compliance Officer for review and follow applicable AML reporting procedures if required."
         if risk_level == "HIGH"
         else "Review manually before processing. Document findings."
     ))
@@ -133,7 +133,7 @@ def _build_summary(transaction: dict, risk_level: str,
     return "\n".join(lines)
 
 
-# ── PUBLIC API — the one function Person 1 calls ──────────────────────────────
+# â”€â”€ PUBLIC API â€” the one function Person 1 calls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def analyze_transaction(transaction: dict) -> dict:
     """
@@ -142,18 +142,18 @@ def analyze_transaction(transaction: dict) -> dict:
     Input dict keys:
         sender_account   (str)
         receiver_account (str)
-        amount           (float)  — INR
-        hour_of_day      (int)    — 0 to 23
-        tx_count_7d      (int)    — transactions in last 7 days
+        amount           (float)  â€” INR
+        hour_of_day      (int)    â€” 0 to 23
+        tx_count_7d      (int)    â€” transactions in last 7 days
         kyc_verified     (bool)
 
     Returns dict:
         risk_level         "HIGH" | "MEDIUM" | "LOW"
-        ml_probability     float 0–1 (model's confidence it's suspicious)
+        ml_probability     float 0â€“1 (model's confidence it's suspicious)
         rule_violations    list of violation dicts
         shap_explanation   list of top-3 feature contributions
         summary            plain-English alert text
-        flagged            bool — True if any issue found
+        flagged            bool â€” True if any issue found
     """
     global _model, _explainer
     if _model is None:
@@ -201,10 +201,10 @@ def analyze_transaction(transaction: dict) -> dict:
     }
 
 
-# ── Quick self-test ───────────────────────────────────────────────────────────
+# â”€â”€ Quick self-test â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 if __name__ == "__main__":
-    print("Testing pipeline.py — running 3 sample transactions...\n")
+    print("Testing pipeline.py â€” running 3 sample transactions...\n")
 
     samples = [
         {
@@ -243,7 +243,7 @@ if __name__ == "__main__":
     ]
 
     for sample in samples:
-        print(f"{'─'*55}")
+        print(f"{'â”€'*55}")
         print(f"TEST: {sample['name']}")
         result = analyze_transaction(sample["tx"])
         print(f"  Risk Level    : {result['risk_level']}")
@@ -253,4 +253,6 @@ if __name__ == "__main__":
         print(f"  Top SHAP Feature: {result['shap_explanation'][0]['display_name']}")
         print()
 
-    print("Pipeline test complete ✓")
+    print("Pipeline test complete âœ“")
+
+
