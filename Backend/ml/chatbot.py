@@ -1,39 +1,57 @@
-﻿# ============================================================
+# ============================================================
 # FILE: ml/chatbot.py
 # ============================================================
-# Compliance chatbot using Hybrid GraphRAG:
+# ComplianceIQ — GraphRAG Compliance Chatbot
 #
-# 1. Retrieve relevant regulation chunks from ChromaDB.
-# 2. Use Neo4j to resolve superseded regulations.
-# 3. Prefer the CURRENT regulation version.
-# 4. Send the final grounded context to Groq.
-# 5. Return explicit citation metadata.
+# Pipeline:
+#   1. Retrieve relevant regulation chunks from ChromaDB
+#   2. Read regulation_id from retrieved metadata
+#   3. Resolve the regulation through Neo4j
+#   4. Detect superseded -> current regulation relationships
+#   5. Retrieve CURRENT regulation text from ChromaDB
+#   6. Build grounded context using current regulation text
+#   7. Generate answer using Groq
+#   8. Return detailed citations and retrieval metadata
 #
-# HOW TO TEST:
+# Supports:
+#   use_graph=True  -> GraphRAG
+#   use_graph=False -> Flat RAG baseline
+#
+# Run from Backend:
 #   python ml/chatbot.py
 # ============================================================
 
 import os
-import json
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
 CHROMA_DIR = "./chroma_db"
 COLLECTION_NAME = "regulations"
+
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+
 GROQ_MODEL = "openai/gpt-oss-120b"
+
 TOP_K = 3
 
-NEO4J_URI = os.getenv("NEO4J_URI")
-NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
-
 _collection = None
+_neo4j_driver = None
 
+
+# ============================================================
+# CHROMADB
+# ============================================================
 
 def _get_collection():
     """Load the ChromaDB collection once and reuse it."""
+
     global _collection
 
     if _collection is not None:
@@ -62,113 +80,200 @@ def _get_collection():
     return _collection
 
 
+# ============================================================
+# NEO4J
+# ============================================================
+
 def _get_neo4j_driver():
-    """Create a Neo4j driver if credentials are available."""
-    if not all([
-        NEO4J_URI,
-        NEO4J_USERNAME,
-        NEO4J_PASSWORD
-    ]):
-        return None
+    """Create and reuse the Neo4j driver."""
+
+    global _neo4j_driver
+
+    if _neo4j_driver is not None:
+        return _neo4j_driver
 
     try:
         from neo4j import GraphDatabase
 
-        return GraphDatabase.driver(
-            NEO4J_URI,
-            auth=(NEO4J_USERNAME, NEO4J_PASSWORD)
+        uri = os.getenv("NEO4J_URI")
+        username = os.getenv("NEO4J_USERNAME")
+        password = os.getenv("NEO4J_PASSWORD")
+
+        if not uri or not username or not password:
+            return None
+
+        _neo4j_driver = GraphDatabase.driver(
+            uri,
+            auth=(username, password)
         )
+
+        # Verify that the connection actually works.
+        _neo4j_driver.verify_connectivity()
+
+        return _neo4j_driver
+
     except Exception:
+        _neo4j_driver = None
         return None
 
 
-def _get_current_version(regulation_id: str) -> str:
-    """
-    Resolve a regulation ID to its current version using Neo4j.
+# ============================================================
+# NEO4J — CURRENT VERSION RESOLUTION
+# ============================================================
 
-    If the regulation is already current, its own ID is returned.
-    If Neo4j is unavailable, the original ID is returned.
+def _get_current_version(regulation_id):
+    """
+    Resolve a regulation to its latest current version.
+
+    Example:
+
+        rbi_kyc_2016
+              |
+          SUPERSEDES
+              v
+        rbi_kyc_2023
+
+    Returns the current regulation ID.
+
+    If no superseding regulation exists, the original regulation
+    ID is returned.
     """
 
     driver = _get_neo4j_driver()
 
-    if driver is None:
+    if driver is None or not regulation_id:
         return regulation_id
+
+    query = """
+    MATCH (regulation:Regulation {id: $id})
+
+    OPTIONAL MATCH
+        (regulation)<-[:SUPERSEDES*1..]-(current:Regulation)
+
+    WITH regulation, current
+
+    ORDER BY
+        CASE
+            WHEN current IS NULL THEN regulation.year
+            ELSE current.year
+        END DESC
+
+    RETURN COALESCE(current.id, regulation.id) AS current_id
+    LIMIT 1
+    """
 
     try:
         with driver.session() as session:
             result = session.run(
-                """
-                MATCH (regulation:Regulation {id: $id})
-                OPTIONAL MATCH
-                    (regulation)<-[:SUPERSEDES*1..]-(current:Regulation)
-                WITH regulation, current
-                ORDER BY current.year DESC
-                RETURN COALESCE(current.id, regulation.id) AS current_id
-                LIMIT 1
-                """,
+                query,
                 id=regulation_id
-            )
+            ).single()
 
-            record = result.single()
+            if result:
+                return result["current_id"]
 
-            if record:
-                return record["current_id"]
-
-    except Exception as e:
-        print(f"Neo4j lookup warning: {e}")
-
-    finally:
-        driver.close()
+    except Exception:
+        pass
 
     return regulation_id
 
 
-def _get_regulation_details(regulation_id: str) -> dict:
+# ============================================================
+# NEO4J — REGULATION DETAILS
+# ============================================================
+
+def _get_regulation_details(regulation_id):
     """
-    Retrieve regulation metadata from Neo4j.
+    Get regulation metadata from Neo4j.
     """
 
     driver = _get_neo4j_driver()
 
-    if driver is None:
-        return {}
+    if driver is None or not regulation_id:
+        return None
+
+    query = """
+    MATCH (r:Regulation {id: $id})
+    RETURN
+        r.id AS id,
+        r.name AS name,
+        r.year AS year,
+        r.status AS status
+    LIMIT 1
+    """
 
     try:
         with driver.session() as session:
             result = session.run(
-                """
-                MATCH (r:Regulation {id: $id})
-                RETURN
-                    r.id AS id,
-                    r.name AS name,
-                    r.year AS year,
-                    r.status AS status
-                """,
+                query,
                 id=regulation_id
-            )
+            ).single()
 
-            record = result.single()
-
-            if record:
+            if result:
                 return {
-                    "id": record["id"],
-                    "name": record["name"],
-                    "year": record["year"],
-                    "status": record["status"],
+                    "id": result["id"],
+                    "name": result["name"],
+                    "year": result["year"],
+                    "status": result["status"],
                 }
 
-    except Exception as e:
-        print(f"Neo4j metadata warning: {e}")
+    except Exception:
+        pass
 
-    finally:
-        driver.close()
-
-    return {}
+    return None
 
 
-def _call_groq(question: str, context_text: str) -> str:
-    """Call Groq to write a grounded answer."""
+# ============================================================
+# CHROMA — CURRENT REGULATION TEXT
+# ============================================================
+
+def _get_current_regulation_chunks(
+    collection,
+    regulation_id,
+    question,
+    n_results=TOP_K
+):
+    """
+    Retrieve text specifically from the resolved CURRENT
+    regulation.
+
+    This is the important GraphRAG step.
+
+    Neo4j tells us which regulation is current.
+    ChromaDB then supplies the actual text belonging to
+    that current regulation.
+    """
+
+    if not collection or not regulation_id:
+        return [], []
+
+    try:
+        results = collection.query(
+            query_texts=[question],
+            n_results=n_results,
+            where={
+                "regulation_id": regulation_id
+            }
+        )
+
+        documents = results.get("documents", [[]])[0]
+        metadatas = results.get("metadatas", [[]])[0]
+
+        return documents, metadatas
+
+    except Exception:
+        return [], []
+
+
+# ============================================================
+# GROQ
+# ============================================================
+
+def _call_groq(question, context_text):
+    """
+    Generate a grounded answer using only supplied regulation
+    context.
+    """
 
     import requests
 
@@ -176,29 +281,35 @@ def _call_groq(question: str, context_text: str) -> str:
 
     if not api_key:
         return (
-            "GROQ_API_KEY is not set in .env — cannot generate an AI answer. "
-            "Here is the relevant regulation text found instead:\n\n"
-            + context_text
+            "GROQ_API_KEY is not set in .env — cannot generate "
+            "an AI answer. Here is the relevant regulation text "
+            "found instead:\n\n" + context_text
         )
 
-    prompt = f"""You are a compliance assistant for an Indian fintech company.
+    prompt = f"""
+You are a compliance assistant for an Indian fintech company.
 
-Answer the question using ONLY the regulation excerpts below.
+Answer the question using ONLY the regulation excerpts provided
+below.
 
-Rules:
-- Do not invent facts.
+Important rules:
+- Do not invent legal requirements.
+- Do not use outside knowledge.
 - If the excerpts do not contain the answer, say so honestly.
-- Cite the regulation source used for each important claim.
-- Prefer CURRENT regulation versions over superseded versions.
-- Do not treat a superseded regulation as the current legal requirement.
+- Prefer the CURRENT regulation when current-version information
+  is explicitly provided.
+- Cite the regulation source when making a claim.
+- Keep the answer concise and professional.
 
 Regulation excerpts:
+
 {context_text}
 
 Question:
 {question}
 
-Answer in 2-4 sentences, professional tone, with source citations inline."""
+Answer in 2-4 sentences with inline source citations.
+"""
 
     try:
         response = requests.post(
@@ -217,43 +328,42 @@ Answer in 2-4 sentences, professional tone, with source citations inline."""
                 "max_tokens": 400,
                 "temperature": 0.2,
             },
-            timeout=15,
+            timeout=30,
         )
 
         response.raise_for_status()
 
-        data = json.loads(
-            response.content.decode("utf-8")
-        )
-
-        return data["choices"][0]["message"]["content"]
+        return response.json()["choices"][0]["message"]["content"]
 
     except Exception as e:
         return (
             f"AI generation unavailable ({e}). "
-            f"Relevant regulation text:\n\n{context_text}"
+            "Relevant regulation text:\n\n"
+            + context_text
         )
 
 
-def answer_question(question: str, use_graph: bool = True) -> dict:
+# ============================================================
+# MAIN QUESTION ANSWER FUNCTION
+# ============================================================
+
+def answer_question(question, use_graph=True):
     """
-    Main chatbot entry point.
+    Answer a compliance question.
 
-    use_graph=True:
-        Hybrid GraphRAG mode.
+    Parameters
+    ----------
+    question : str
+        User's compliance question.
 
-    use_graph=False:
-        Original flat ChromaDB RAG mode.
+    use_graph : bool
+        True  -> GraphRAG
+        False -> Flat RAG baseline.
 
-    Returns:
-    {
-        "question": str,
-        "answer": str,
-        "sources": [...],
-        "citations": [...],
-        "retrieval_mode": str,
-        "found_in_regulations": bool
-    }
+    Returns
+    -------
+    dict
+        Contains answer, sources, citations and retrieval mode.
     """
 
     collection = _get_collection()
@@ -268,9 +378,15 @@ def answer_question(question: str, use_graph: bool = True) -> dict:
             ),
             "sources": [],
             "citations": [],
-            "retrieval_mode": "graph_rag" if use_graph else "flat_rag",
+            "retrieval_mode": (
+                "graph_rag" if use_graph else "flat_rag"
+            ),
             "found_in_regulations": False,
         }
+
+    # --------------------------------------------------------
+    # STEP 1 — Initial Chroma retrieval
+    # --------------------------------------------------------
 
     results = collection.query(
         query_texts=[question],
@@ -283,103 +399,221 @@ def answer_question(question: str, use_graph: bool = True) -> dict:
     if not documents:
         return {
             "question": question,
-            "answer": "No relevant regulation content was found for this question.",
+            "answer": (
+                "No relevant regulation content was found "
+                "for this question."
+            ),
             "sources": [],
             "citations": [],
-            "retrieval_mode": "graph_rag" if use_graph else "flat_rag",
+            "retrieval_mode": (
+                "graph_rag" if use_graph else "flat_rag"
+            ),
             "found_in_regulations": False,
         }
 
-    context_parts = []
+    # --------------------------------------------------------
+    # FLAT RAG BASELINE
+    # --------------------------------------------------------
+
+    if not use_graph:
+
+        context_parts = []
+        sources = []
+        citations = []
+
+        for doc, meta in zip(documents, metadatas):
+
+            source = meta.get(
+                "source",
+                "Unknown"
+            )
+
+            section = meta.get(
+                "section",
+                ""
+            )
+
+            regulation_id = meta.get(
+                "regulation_id",
+                ""
+            )
+
+            context_parts.append(
+                f"[{source} — {section}]\n{doc}"
+            )
+
+            if source not in sources:
+                sources.append(source)
+
+            citations.append(
+                {
+                    "source": source,
+                    "section": section,
+                    "original_regulation_id": regulation_id,
+                    "current_regulation_id": "",
+                    "current_regulation_name": "",
+                    "current_year": "",
+                    "status": "",
+                    "retrieval_mode": "flat_rag",
+                }
+            )
+
+        context_text = "\n\n".join(context_parts)
+
+        answer = _call_groq(
+            question,
+            context_text
+        )
+
+        return {
+            "question": question,
+            "answer": answer,
+            "sources": sources,
+            "citations": citations,
+            "retrieval_mode": "flat_rag",
+            "found_in_regulations": True,
+        }
+
+    # --------------------------------------------------------
+    # GRAPHRAG
+    # --------------------------------------------------------
+
+    graph_context_parts = []
     sources = []
     citations = []
 
-    for doc, meta in zip(documents, metadatas):
+    processed_regulations = set()
 
-        original_source = meta.get("source", "Unknown")
-        section = meta.get("section", "")
+    for original_doc, original_meta in zip(
+        documents,
+        metadatas
+    ):
 
-        citation = {
-            "source": original_source,
-            "section": section,
-            "original_regulation_id": meta.get(
-                "regulation_id",
-                ""
-            ),
-            "current_regulation_id": "",
-            "current_regulation_name": "",
-            "current_year": "",
-            "status": "",
-            "retrieval_mode": "graph_rag" if use_graph else "flat_rag",
-        }
+        source = original_meta.get(
+            "source",
+            "Unknown"
+        )
 
-        if use_graph:
+        section = original_meta.get(
+            "section",
+            ""
+        )
 
-            regulation_id = meta.get("regulation_id")
+        original_regulation_id = original_meta.get(
+            "regulation_id",
+            ""
+        )
 
-            if regulation_id:
-                current_id = _get_current_version(
-                    regulation_id
-                )
+        # ----------------------------------------------------
+        # STEP 2 — Resolve regulation through Neo4j
+        # ----------------------------------------------------
 
-                current_details = _get_regulation_details(
-                    current_id
-                )
+        current_regulation_id = _get_current_version(
+            original_regulation_id
+        )
 
-                citation["current_regulation_id"] = current_id
-                citation["current_regulation_name"] = (
-                    current_details.get("name", "")
-                )
-                citation["current_year"] = (
-                    current_details.get("year", "")
-                )
-                citation["status"] = (
-                    current_details.get("status", "")
-                )
+        current_details = _get_regulation_details(
+            current_regulation_id
+        )
 
-                display_source = (
-                    current_details.get("name")
-                    or original_source
-                )
+        # ----------------------------------------------------
+        # STEP 3 — Retrieve CURRENT regulation text
+        # ----------------------------------------------------
 
-                if current_id != regulation_id:
-                    context_parts.append(
-                        f"[CURRENT REGULATION: {display_source}]\n"
-                        f"[Original retrieved source: {original_source}]\n"
-                        f"[Section: {section}]\n"
-                        f"{doc}"
+        current_documents, current_metadatas = (
+            _get_current_regulation_chunks(
+                collection,
+                current_regulation_id,
+                question,
+                TOP_K
+            )
+        )
+
+        # If current text is unavailable, fall back to the
+        # originally retrieved text rather than inventing data.
+        if current_documents:
+
+            if current_regulation_id not in processed_regulations:
+
+                for current_doc, current_meta in zip(
+                    current_documents,
+                    current_metadatas
+                ):
+
+                    current_source = current_meta.get(
+                        "source",
+                        "Unknown"
                     )
-                else:
-                    context_parts.append(
-                        f"[{display_source} — {section}]\n"
-                        f"{doc}"
+
+                    current_section = current_meta.get(
+                        "section",
+                        ""
                     )
 
-                if display_source not in sources:
-                    sources.append(display_source)
+                    graph_context_parts.append(
+                        "[CURRENT REGULATION: "
+                        f"{current_details['name'] if current_details else current_regulation_id}"
+                        "]\n"
+                        f"[{current_source} — {current_section}]\n"
+                        f"{current_doc}"
+                    )
 
-            else:
-                context_parts.append(
-                    f"[{original_source} — {section}]\n"
-                    f"{doc}"
+                processed_regulations.add(
+                    current_regulation_id
                 )
-
-                if original_source not in sources:
-                    sources.append(original_source)
 
         else:
 
-            context_parts.append(
-                f"[{original_source} — {section}]\n"
-                f"{doc}"
+            graph_context_parts.append(
+                "[CURRENT REGULATION TEXT NOT FOUND IN "
+                "VECTOR STORE]\n"
+                f"[Original source: {source} — {section}]\n"
+                f"{original_doc}"
             )
 
-            if original_source not in sources:
-                sources.append(original_source)
+        # ----------------------------------------------------
+        # Citation metadata
+        # ----------------------------------------------------
+
+        citation = {
+            "source": source,
+            "section": section,
+            "original_regulation_id": original_regulation_id,
+            "current_regulation_id": (
+                current_details["id"]
+                if current_details
+                else current_regulation_id
+            ),
+            "current_regulation_name": (
+                current_details["name"]
+                if current_details
+                else ""
+            ),
+            "current_year": (
+                current_details["year"]
+                if current_details
+                else ""
+            ),
+            "status": (
+                current_details["status"]
+                if current_details
+                else ""
+            ),
+            "retrieval_mode": "graph_rag",
+        }
 
         citations.append(citation)
 
-    context_text = "\n\n".join(context_parts)
+        if source not in sources:
+            sources.append(source)
+
+    # --------------------------------------------------------
+    # STEP 4 — Generate answer from current regulation context
+    # --------------------------------------------------------
+
+    context_text = "\n\n".join(
+        graph_context_parts
+    )
 
     answer = _call_groq(
         question,
@@ -391,14 +625,14 @@ def answer_question(question: str, use_graph: bool = True) -> dict:
         "answer": answer,
         "sources": sources,
         "citations": citations,
-        "retrieval_mode": (
-            "graph_rag"
-            if use_graph
-            else "flat_rag"
-        ),
+        "retrieval_mode": "graph_rag",
         "found_in_regulations": True,
     }
 
+
+# ============================================================
+# TEST
+# ============================================================
 
 if __name__ == "__main__":
 
@@ -415,19 +649,14 @@ if __name__ == "__main__":
     )
 
     print(
-        "NEO4J configured:",
-        "YES ✓"
-        if all([
-            NEO4J_URI,
-            NEO4J_USERNAME,
-            NEO4J_PASSWORD
-        ])
-        else "NO ✗"
+        "NEO4J_URI       :",
+        "SET ✓" if os.getenv("NEO4J_URI")
+        else "NOT SET ✗"
     )
 
     test_question = (
-        "What is the reporting threshold for "
-        "large cash transactions under PMLA?"
+        "What is the reporting threshold for large cash "
+        "transactions under PMLA?"
     )
 
     print(
@@ -449,12 +678,11 @@ if __name__ == "__main__":
     )
 
     print(
-        f"\nSources: "
-        f"{result['sources']}"
+        f"\nSources: {result['sources']}"
     )
 
     print(
-        "\nCitations:"
+        f"\nCitations:"
     )
 
     for citation in result["citations"]:
