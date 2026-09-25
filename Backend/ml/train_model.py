@@ -1,5 +1,5 @@
-"""
-train_model.py — Person 2's File 2
+﻿"""
+train_model.py â€” Person 2's File 2
 
 Generates 10,000 synthetic transactions, trains an XGBoost classifier,
 evaluates it, and saves the trained model + SHAP explainer to disk.
@@ -52,7 +52,7 @@ fake = Faker("en_IN")
 np.random.seed(42)
 
 
-# ── Step 1: Generate synthetic dataset ───────────────────────────────────────
+# â”€â”€ Step 1: Generate synthetic dataset â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def generate_dataset(n_samples: int = 10_000) -> pd.DataFrame:
     """
@@ -78,7 +78,7 @@ def generate_dataset(n_samples: int = 10_000) -> pd.DataFrame:
 
     for i in range(n_samples):
 
-        # ── Transaction identity ─────────────────────────────────────────────
+        # â”€â”€ Transaction identity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         transaction_id = str(uuid.uuid4())
 
@@ -101,7 +101,7 @@ def generate_dataset(n_samples: int = 10_000) -> pd.DataFrame:
             seconds=int(np.random.randint(0, 60)),
         )
 
-        # ── Decide whether this is a positive/risk-pattern example ───────────
+        # â”€â”€ Decide whether this is a positive/risk-pattern example â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         is_violation = np.random.random() < 0.15
 
@@ -190,7 +190,7 @@ def generate_dataset(n_samples: int = 10_000) -> pd.DataFrame:
 
         else:
 
-            # ── Normal transaction ───────────────────────────────────────────
+            # â”€â”€ Normal transaction â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
             amount = np.random.exponential(
                 scale=25_000
@@ -215,7 +215,7 @@ def generate_dataset(n_samples: int = 10_000) -> pd.DataFrame:
 
             label = 0
 
-        # ── Store row ────────────────────────────────────────────────────────
+        # â”€â”€ Store row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         rows.append(
             {
@@ -230,6 +230,7 @@ def generate_dataset(n_samples: int = 10_000) -> pd.DataFrame:
                 "hour_of_day": hour,
                 "tx_count_7d": tx_count,
                 "kyc_verified": int(kyc),
+                "pattern": pattern if is_violation else "normal",
 
                 # Training label
                 "label": label,
@@ -239,7 +240,7 @@ def generate_dataset(n_samples: int = 10_000) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-# ── Step 2: Train the model ──────────────────────────────────────────────────
+# â”€â”€ Step 2: Train the model â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def train_and_evaluate(df: pd.DataFrame):
 
@@ -278,7 +279,7 @@ def train_and_evaluate(df: pd.DataFrame):
         y_train,
     )
 
-    # ── Evaluate ─────────────────────────────────────────────────────────────
+    # â”€â”€ Evaluate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     y_pred = model.predict(X_test)
 
@@ -328,13 +329,13 @@ def train_and_evaluate(df: pd.DataFrame):
     )
 
     print("=" * 50)
-    print("  ✓ Model evaluation complete")
+    print("  âœ“ Model evaluation complete")
     print("=" * 50 + "\n")
 
     return model, X_test
 
 
-# ── Step 3: Build SHAP explainer ─────────────────────────────────────────────
+# â”€â”€ Step 3: Build SHAP explainer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def build_shap_explainer(
     model,
@@ -353,7 +354,7 @@ def build_shap_explainer(
     return explainer
 
 
-# ── Step 4: Save both to disk ────────────────────────────────────────────────
+# â”€â”€ Step 4: Save both to disk â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def save_artifacts(
     model,
@@ -386,25 +387,25 @@ def save_artifacts(
         )
 
     print(
-        "  ✓ Saved ml/model.pkl"
+        "  âœ“ Saved ml/model.pkl"
     )
 
     print(
-        "  ✓ Saved ml/shap_explainer.pkl"
+        "  âœ“ Saved ml/shap_explainer.pkl"
     )
 
     print(
-        "  → These two files are loaded by "
+        "  â†’ These two files are loaded by "
         "pipeline.py at runtime\n"
     )
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# â”€â”€ Main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 if __name__ == "__main__":
 
     print(
-        "\nStep 1/4 — Generating "
+        "\nStep 1/4 â€” Generating "
         "10,000 synthetic transactions..."
     )
 
@@ -421,16 +422,16 @@ if __name__ == "__main__":
     )
 
     print(
-        f"  ✓ Generated {len(df):,} transactions"
+        f"  âœ“ Generated {len(df):,} transactions"
     )
 
     print(
-        f"  ✓ Risk-pattern examples : "
+        f"  âœ“ Risk-pattern examples : "
         f"{violation_count:,}"
     )
 
     print(
-        f"  ✓ Normal examples       : "
+        f"  âœ“ Normal examples       : "
         f"{normal_count:,}\n"
     )
 
@@ -446,12 +447,12 @@ if __name__ == "__main__":
     )
 
     print(
-        "  ✓ Saved to: "
+        "  âœ“ Saved to: "
         "dataset/transactions.csv\n"
     )
 
     print(
-        "Step 2/4 — Training XGBoost model..."
+        "Step 2/4 â€” Training XGBoost model..."
     )
 
     model, X_test = train_and_evaluate(
@@ -459,7 +460,7 @@ if __name__ == "__main__":
     )
 
     print(
-        "Step 3/4 — Building SHAP explainer..."
+        "Step 3/4 â€” Building SHAP explainer..."
     )
 
     explainer = build_shap_explainer(
@@ -468,11 +469,11 @@ if __name__ == "__main__":
     )
 
     print(
-        "  ✓ SHAP explainer ready\n"
+        "  âœ“ SHAP explainer ready\n"
     )
 
     print(
-        "Step 4/4 — Saving model and "
+        "Step 4/4 â€” Saving model and "
         "explainer to disk..."
     )
 
