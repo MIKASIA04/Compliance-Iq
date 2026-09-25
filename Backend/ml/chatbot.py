@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 # FILE: ml/chatbot.py
 # ============================================================
 # Answers compliance questions using RAG:
@@ -12,6 +12,7 @@
 # ============================================================
 
 import os
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -55,13 +56,13 @@ def _call_groq(question: str, context_text: str) -> str:
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         return (
-            "GROQ_API_KEY is not set in .env — cannot generate an AI answer. "
+            "GROQ_API_KEY is not set in .env â€” cannot generate an AI answer. "
             "Here is the relevant regulation text found instead:\n\n" + context_text
         )
 
     prompt = f"""You are a compliance assistant for an Indian fintech company.
 Answer the question using ONLY the regulation excerpts below. If the excerpts
-don't contain the answer, say so honestly — do not make up information.
+don't contain the answer, say so honestly â€” do not make up information.
 Cite the source name for any claim you make.
 
 Regulation excerpts:
@@ -84,7 +85,8 @@ Answer in 2-4 sentences, professional tone, with source citations inline."""
             timeout=15,
         )
         response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
+        data = json.loads(response.content.decode("utf-8"))
+        return data["choices"][0]["message"]["content"]
     except Exception as e:
         return f"AI generation unavailable ({e}). Relevant regulation text:\n\n{context_text}"
 
@@ -131,7 +133,7 @@ def answer_question(question: str) -> dict:
     for doc, meta in zip(documents, metadatas):
         source = meta.get("source", "Unknown")
         section = meta.get("section", "")
-        context_parts.append(f"[{source} — {section}]\n{doc}")
+        context_parts.append(f"[{source} â€” {section}]\n{doc}")
         if source not in sources:
             sources.append(source)
 
@@ -147,8 +149,8 @@ def answer_question(question: str) -> dict:
 
 
 if __name__ == "__main__":
-    print("ChromaDB exists :", "YES ✓" if os.path.exists(CHROMA_DIR) else "NO ✗")
-    print("GROQ_API_KEY    :", "SET ✓" if os.getenv("GROQ_API_KEY") else "NOT SET ✗")
+    print("ChromaDB exists :", "YES âœ“" if os.path.exists(CHROMA_DIR) else "NO âœ—")
+    print("GROQ_API_KEY    :", "SET âœ“" if os.getenv("GROQ_API_KEY") else "NOT SET âœ—")
 
     test_question = "What is the reporting threshold for large cash transactions under PMLA?"
     print(f'\nQ: "{test_question}"')
@@ -156,3 +158,5 @@ if __name__ == "__main__":
     print(f"A: {result['answer']}")
     print(f"Sources: {result['sources']}")
     print(f"Found in regulations: {result['found_in_regulations']}")
+
+
