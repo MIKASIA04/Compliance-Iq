@@ -75,7 +75,7 @@ def _get_shap_explanation(transaction_df: pd.DataFrame) -> list[dict]:
             "feature_name": feat,
             "display_name": FEATURE_LABELS.get(feat, feat),
             "value": float(transaction_df[feat].iloc[0]),
-            "contribution": round(abs(contrib), 4),
+            "contribution": round(contrib, 4),
             "direction": "increases_risk" if contrib > 0 else "decreases_risk",
         })
 
