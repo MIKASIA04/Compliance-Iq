@@ -1,4 +1,4 @@
-# ComplianceIQ API Contract
+﻿# ComplianceIQ API Contract
 
 Base URL (local dev): `http://localhost:8000`
 
@@ -87,7 +87,7 @@ Response `200`:
   "violations": [
     {
       "rule_id": "R002",
-      "rule_name": "Possible Structuring / Smurfing",
+      "rule_name": "Near-Threshold Transaction Risk",
       "regulation_source": "...",
       "severity": "high"
     }
@@ -158,7 +158,7 @@ Full alert detail including SHAP features and the transaction that triggered it.
 }
 ```
 
-### PUT `/alerts/{alert_id}/resolve` — officer/admin only
+### PUT `/alerts/{alert_id}/resolve` â€” officer/admin only
 
 Request:
 
@@ -177,9 +177,9 @@ Response:
 }
 ```
 
-Analyst role → `403 Forbidden`
+Analyst role â†’ `403 Forbidden`
 
-### PUT `/alerts/{alert_id}/escalate` — officer/admin only
+### PUT `/alerts/{alert_id}/escalate` â€” officer/admin only
 
 Response:
 
@@ -290,8 +290,9 @@ The chatbot uses the RAG pipeline to retrieve relevant regulation excerpts from 
 | 403  | Logged in but role not permitted for this route           |
 | 404  | Resource not found                                        |
 | 422  | Request body doesn't match expected shape                 |
-| 429  | Account locked (5 failed logins → 15 min lockout)         |
+| 429  | Account locked (5 failed logins â†’ 15 min lockout)         |
 
 ---
 
 *Updated for the current ComplianceIQ backend implementation.*
+
